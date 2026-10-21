@@ -1,0 +1,109 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body><canvas id="c"></canvas><script src="common.js"></script><script>
+// V2 "NETWORK" — drifting nodes link up, converge into a dot-matrix wordmark, resolve to solid type + tagline.
+const SIZE = 190, LS = 18, CAP = SIZE * 0.727, WY = 500, STEP = 8;
+const TAG = 'Creative, Connected.';
+const R = rng(20261021);
+
+// Sample target points from the wordmark glyphs.
+const off = document.createElement('canvas'); off.width = W; off.height = H;
+const octx = off.getContext('2d');
+octx.font = `700 ${SIZE}px "Inter Display"`; octx.letterSpacing = LS + 'px';
+octx.textAlign = 'left'; octx.fillStyle = '#fff';
+const total = octx.measureText('INTERMISSION').width - LS;
+octx.fillText('INTERMISSION', CX - total / 2, WY + CAP / 2);
+const px = octx.getImageData(0, 0, W, H).data;
+const targets = [];
+for (let y = 0; y < H; y += STEP) for (let x = 0; x < W; x += STEP) if (px[(y * W + x) * 4 + 3] > 140) targets.push([x, y]);
+
+const P = targets.map(([tx, ty]) => ({
+  tx, ty, x0: R() * W, y0: R() * H,
+  ax: 40 + R() * 90, ay: 30 + R() * 70, fx: 0.15 + R() * 0.35, fy: 0.15 + R() * 0.35,
+  px: R() * 6.28, py: R() * 6.28, d: R() * 1.6 + (tx - (CX - total / 2)) / total * 0.9,
+  blue: R() < 0.09, r: 1.6 + R() * 1.6,
+}));
+// Ambient nodes never settle; they keep the network alive around the mark.
+const A = Array.from({ length: 70 }, () => ({ x0: R() * W, y0: R() * H, ax: 60 + R() * 120, ay: 40 + R() * 90,
+  fx: 0.1 + R() * 0.25, fy: 0.1 + R() * 0.25, px: R() * 6.28, py: R() * 6.28, r: 1.5 + R() * 2 }));
+P.forEach((p, i) => { p.link = i % 14 === 0; if (p.link) p.r = 2.6 + R() * 1.8; });
+const LINKERS = P.filter(p => p.link);
+
+const drift = (p, t) => [p.x0 + p.ax * Math.sin(t * p.fx + p.px), p.y0 + p.ay * Math.cos(t * p.fy + p.py)];
+
+function links(pts, maxD, alpha) {
+  if (alpha <= 0.002) return;
+  ctx.lineWidth = 1;
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+    const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1], d2 = dx * dx + dy * dy;
+    if (d2 > maxD * maxD) continue;
+    ctx.strokeStyle = `rgba(242,240,235,${(1 - Math.sqrt(d2) / maxD) * alpha})`;
+    ctx.beginPath(); ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[j][0], pts[j][1]); ctx.stroke();
+  }
+}
+
+function draw(t) {
+  bg();
+  const g = ctx.createRadialGradient(CX, WY, 0, CX, WY, 1100);
+  g.addColorStop(0, 'rgba(43,80,255,0.10)'); g.addColorStop(1, 'rgba(43,80,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const intro = E.outCubic(seg(t, 0, 1.6));
+  const solid = E.inOutCubic(seg(t, 9.0, 10.2));
+  const fadeOut = 1 - E.inOutCubic(seg(t, 13.9, 15));
+  const conv = seg(t, 3.6, 8.6);
+
+  const pos = P.map(p => {
+    const [dx, dy] = drift(p, t);
+    const k = E.inOutCubic(seg(t, 3.6 + p.d, 6.4 + p.d));
+    return [lerp(dx, p.tx, k), lerp(dy, p.ty, k), k];
+  });
+  const amb = A.map(p => drift(p, t));
+
+  // network lines: strong while drifting, thinning as nodes lock in
+  const linkPts = LINKERS.map(p => pos[P.indexOf(p)]).concat(amb);
+  links(linkPts, 175, 0.55 * intro * (1 - E.inOutCubic(conv)) * fadeOut);
+  links(amb, 190, 0.16 * intro * fadeOut);
+
+  // nodes
+  ctx.globalAlpha = intro * fadeOut;
+  P.forEach((p, i) => {
+    const [x, y, k] = pos[i];
+    const r = lerp(p.link ? p.r : 1.1, 2.6, k) * (1 - solid);
+    if (r < 0.05) return;
+    // non-linking nodes stay faint dust until they lock into the mark
+    ctx.globalAlpha = intro * fadeOut * (p.link ? 1 : lerp(0.28, 1, k));
+    ctx.fillStyle = p.blue && k < 0.98 ? C.blue : C.fg;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
+  });
+  ctx.globalAlpha = intro * fadeOut;
+  A.forEach((p, i) => {
+    ctx.fillStyle = i % 4 ? 'rgba(242,240,235,0.55)' : C.blue;
+    ctx.beginPath(); ctx.arc(amb[i][0], amb[i][1], p.r, 0, 6.2832); ctx.fill();
+  });
+
+  // solid wordmark resolves over the dot matrix
+  ctx.globalAlpha = solid * fadeOut;
+  setFont(SIZE, 700, LS); ctx.fillStyle = C.fg; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('INTERMISSION', CX - total / 2, WY + CAP / 2);
+
+  // tagline: two words joined by a node–line–node connector
+  const ty = WY + CAP / 2 + 120;
+  setFont(46, 300, 3, 'Inter');
+  const w1 = ctx.measureText('Creative,').width, w2 = ctx.measureText('Connected.').width;
+  const gap = 150, left = CX - (w1 + gap + w2) / 2;
+  const kw1 = E.outExpo(seg(t, 10.0, 11.0)), kc = E.inOutExpo(seg(t, 10.4, 11.3)), kw2 = E.outExpo(seg(t, 11.0, 12.0));
+  ctx.globalAlpha = kw1 * fadeOut; ctx.fillStyle = '#B5B3AE';
+  ctx.fillText('Creative,', left - (1 - kw1) * 40, ty);
+  ctx.globalAlpha = kw2 * fadeOut; ctx.fillStyle = C.fg;
+  ctx.fillText('Connected.', left + w1 + gap + (1 - kw2) * 40, ty);
+  const lx0 = left + w1 + 26, lx1 = left + w1 + gap - 30, ly = ty - 15;
+  ctx.globalAlpha = fadeOut * seg(t, 10.4, 10.6);
+  ctx.strokeStyle = C.blue; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(lx0, ly); ctx.lineTo(lerp(lx0, lx1, kc), ly); ctx.stroke();
+  ctx.fillStyle = C.blue;
+  ctx.beginPath(); ctx.arc(lx0, ly, 7, 0, 6.2832); ctx.fill();
+  if (kc > 0.98) { ctx.beginPath(); ctx.arc(lx1, ly, 7 * E.outBack(seg(t, 11.3, 11.6)), 0, 6.2832); ctx.fill(); }
+  ctx.globalAlpha = 1;
+}
+window.ready = true;
+</script></body></html>

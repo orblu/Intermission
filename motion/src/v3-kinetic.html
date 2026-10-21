@@ -1,0 +1,102 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body><canvas id="c"></canvas><script src="common.js"></script><script>
+// V3 "KINETIC" — fast-cut kinetic type: CREATIVE, / CONNECTED. / scrolling rows → INTER | MISSION snap shut → typed tagline.
+const TAG = 'Creative, Connected.';
+
+function bigWord(word, color, t0, t1, dir, size = 330) {
+  // slam in from one side, then keep drifting slowly
+  const k = E.outExpo(seg(T, t0, t0 + 0.55));
+  setFont(size, 900, -6); ctx.fillStyle = color; ctx.textBaseline = 'alphabetic';
+  const w = ctx.measureText(word).width;
+  const drift = (T - t0) * 60 * dir;
+  ctx.fillText(word, CX - w / 2 + (1 - k) * W * dir + drift, CY + size * 0.36);
+}
+
+function wipe(t0, dur, color, from) {
+  const k = E.inOutExpo(seg(T, t0, t0 + dur));
+  if (k <= 0) return false;
+  ctx.fillStyle = color;
+  if (from === 'bottom') ctx.fillRect(0, H * (1 - k), W, H * k);
+  else if (from === 'left') ctx.fillRect(0, 0, W * k, H);
+  else if (from === 'right') ctx.fillRect(W * (1 - k), 0, W * k, H);
+  else if (from === 'top') ctx.fillRect(0, 0, W, H * k);
+  return k >= 1;
+}
+
+let T = 0;
+function draw(t) {
+  T = t;
+  // Scene 1 — CREATIVE, on black
+  if (t < 1.25) {
+    bg(); bigWord('CREATIVE,', C.fg, 0.05, 1.2, 1);
+    wipe(0.95, 0.3, C.blue, 'bottom');
+    return;
+  }
+  // Scene 2 — CONNECTED. on blue
+  if (t < 2.35) {
+    bg(C.blue); bigWord('CONNECTED.', C.bg, 1.2, 2.3, -1, 250);
+    wipe(2.05, 0.3, C.fg, 'left');
+    return;
+  }
+  // Scene 3 — alternating scrolling rows of the name on off-white
+  if (t < 3.9) {
+    bg(C.fg);
+    const size = 130, rowH = 150, k = t - 2.35;
+    setFont(size, 900, -2); ctx.textBaseline = 'alphabetic';
+    const unit = 'INTERMISSION  ·  ';
+    const uw = ctx.measureText(unit).width;
+    for (let r = -1; r < 8; r++) {
+      const dir = r % 2 ? 1 : -1, speed = 260 + (r % 3) * 90;
+      let x = ((k * speed * dir) % uw) - uw;
+      const y = r * rowH + 150 + Math.sin(k * 2) * 6;
+      ctx.fillStyle = r === 3 ? C.blue : C.bg;
+      for (; x < W + uw; x += uw) ctx.fillText(unit, x, y);
+    }
+    wipe(3.6, 0.3, C.bg, 'top');
+    return;
+  }
+  // Scene 4 — INTER | MISSION meet across a closing blue gap, tagline types in
+  bg();
+  const SIZE = 170, CAP = SIZE * 0.727, WY = 500;
+  setFont(SIZE, 900, 2); ctx.textBaseline = 'alphabetic';
+  const wA = ctx.measureText('INTER').width, wB = ctx.measureText('MISSION').width;
+  const kIn = E.outExpo(seg(t, 3.9, 4.6));
+  const kGap = E.inOutExpo(seg(t, 4.9, 5.5));
+  const kOut = E.inExpo(seg(t, 9.0, 9.45));
+  const gap = lerp(220, 0, kGap) + kOut * 0;
+  const total = wA + wB + gap;
+  const xA = CX - total / 2 - (1 - kIn) * 900;
+  const xB = CX - total / 2 + wA + gap + (1 - kIn) * 900;
+  const base = WY + CAP / 2;
+  const scale = 1 + 0.04 * E.outCubic(seg(t, 5.5, 9.0));
+  ctx.save(); ctx.translate(CX, WY); ctx.scale(scale, scale); ctx.translate(-CX, -WY);
+  ctx.fillStyle = C.fg;
+  ctx.fillText('INTER', xA, base);
+  ctx.fillText('MISSION', xB, base);
+  // the break between the halves: a blue bar that thins to nothing as they lock
+  const barW = lerp(28, 0, kGap), barH = CAP * 1.6 * E.outBack(seg(t, 4.1, 4.7)) * (1 - kGap * 0.3);
+  if (barW > 0.3) { ctx.fillStyle = C.blue; ctx.fillRect(xA + wA + gap / 2 - barW / 2, WY - barH / 2, barW, barH); }
+  // underline that grows once they're joined
+  const kLine = E.outExpo(seg(t, 5.4, 6.2));
+  ctx.fillStyle = C.blue; ctx.fillRect(CX - total / 2, base + 34, total * kLine, 6);
+  // typed tagline with block cursor
+  setFont(48, 400, 2, 'JetBrains Mono');
+  const tw = ctx.measureText(TAG).width;
+  const n = Math.floor(cl((t - 6.1) / 1.2) * TAG.length);
+  const tx = CX - tw / 2, ty = base + 130;
+  ctx.fillStyle = C.fg; ctx.fillText(TAG.slice(0, n), tx, ty);
+  if (t > 5.9) {
+    const cx = tx + ctx.measureText(TAG.slice(0, n)).width + 6;
+    if (n < TAG.length || Math.floor(t * 2.2) % 2 === 0) { ctx.fillStyle = C.blue; ctx.fillRect(cx, ty - 40, 26, 50); }
+  }
+  ctx.restore();
+  // Outro — blue sweeps up, small mark rests on it
+  if (wipe(9.0, 0.5, C.blue, 'bottom')) {
+    const k = E.outCubic(seg(t, 9.45, 9.8));
+    ctx.globalAlpha = k; setFont(56, 900, 6); ctx.fillStyle = C.fg;
+    const w = ctx.measureText('INTERMISSION').width - 6;
+    ctx.fillText('INTERMISSION', CX - w / 2, CY + 20 + (1 - k) * 20); ctx.globalAlpha = 1;
+  }
+}
+window.ready = true;
+</script></body></html>
